@@ -10,7 +10,7 @@ import numpy as np
 # =============================
 # CONFIG
 # =============================
-st.set_page_config("Dashboard Comercial - Marzo CVS 2026", layout="wide")
+st.set_page_config("Dashboard CVS del 1 al 8 de abril", layout="wide")
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -33,7 +33,7 @@ if not RUTA_LIQ.exists() or not RUTA_METAS.exists():
 # =============================
 st.markdown("""
 <div style="background-color:#E30613;padding:15px;border-radius:10px">
-<h1 style="color:white;text-align:center">📊 Dashboard Cierre Comercial – CVS 2026</h1>
+<h1 style="color:white;text-align:center">📊 Dashboard de ventas del 1 al 8 de abril – CVS 2026</h1>
 </div>
 """, unsafe_allow_html=True)
 
@@ -414,6 +414,7 @@ with tab1:
 SUPERNUMERARIOS = [
     "Johan Daniel Herrera Mazo",
     "Kelly Yuliana Ospina Saldarriaga",
+    "Lider  Bagre",
     "Sara Julieth Acevedo Gutierrez"
 ]
 
@@ -422,8 +423,9 @@ SUPERNUMERARIOS = [
 # REGLA DE DISTRIBUCIÓN
 # =====================
 def calcular_distribucion(n_asesores, cvs):
-    if str(cvs).upper() == "FRONTINO":
-        return 0.50, 0.50
+    # Regla especial para EL BAGRE
+    if str(cvs).upper() == "EL BAGRE":
+        return 1/3, 1/3
 
     if n_asesores == 0:
         return 1.0, 1.0
