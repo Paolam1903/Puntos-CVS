@@ -4,9 +4,9 @@ import pandas as pd
 # REGLA DE DISTRIBUCIÓN
 # =====================
 def calcular_distribucion(n_asesores, cvs):
-    # Regla especial para EL BAGRE
-    if str(cvs).upper() == "EL BAGRE":
-        return 1/3, 1/3
+    # Regla especial para Frontino
+    if str(cvs).upper() == "FRONTINO":
+        return 0.40, 0.60
     
     # Si no hay asesores, el líder cumple al 100%
     if n_asesores == 0:
