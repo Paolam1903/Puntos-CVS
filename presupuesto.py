@@ -4,7 +4,13 @@ import pandas as pd
 # REGLA DE DISTRIBUCIÓN
 # =====================
 def calcular_distribucion(n_asesores, cvs):
-
+    # Regla especial para Frontino
+    if str(cvs).upper() == "FRONTINO":
+        return 0.40, 0.60
+    
+    # Si no hay asesores, el líder cumple al 100%
+    if n_asesores == 0:
+        return 1.0, 1.0  # 100% meta productos, 100% meta general
 
     # Reglas normales
     if n_asesores == 1:
