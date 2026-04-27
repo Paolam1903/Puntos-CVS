@@ -33,7 +33,7 @@ if not RUTA_LIQ.exists() or not RUTA_METAS.exists():
 # =============================
 st.markdown("""
 <div style="background-color:#E30613;padding:15px;border-radius:10px">
-<h1 style="color:white;text-align:center">📊 Dashboard Comercial ventas de 01 al 20 – CVS PLUS al 18 de abril 2026</h1>
+<h1 style="color:white;text-align:center">📊 Dashboard Comercial ventas de 01 al 26 – CVS PLUS al 25 de abril 2026</h1>
 </div>
 """, unsafe_allow_html=True)
 
@@ -78,6 +78,7 @@ ACCESOS_CVS = {
     "GENERAL": "Todos12345+",
     "NUMERARIO": "numerario2026+",
     "GIRARDOTA": "girardota20+",
+    "SAN CRISTOBAL" : "Cristobal123",
 
 
 }
