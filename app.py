@@ -10,7 +10,7 @@ import numpy as np
 # =============================
 # CONFIG
 # =============================
-st.set_page_config("Dashboard Comercial - Marzo CVS 2026", layout="wide")
+st.set_page_config("Dashboard Comercial - Abril CVS 2026", layout="wide")
 
 
 BASE_DIR = Path(__file__).resolve().parent
