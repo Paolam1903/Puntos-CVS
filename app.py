@@ -6,11 +6,12 @@ import sqlite3
 from PIL import Image
 import matplotlib.pyplot as plt
 import numpy as np
+import math
 
 # =============================
 # CONFIG
 # =============================
-st.set_page_config("Dashboard Comercial - Abril CVS 2026", layout="wide")
+st.set_page_config("Dashboard Comercial - Junio CVS 2026", layout="wide")
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -33,7 +34,7 @@ if not RUTA_LIQ.exists() or not RUTA_METAS.exists():
 # =============================
 st.markdown("""
 <div style="background-color:#E30613;padding:15px;border-radius:10px">
-<h1 style="color:white;text-align:center">📊 Dashboard Liquidación Comercial de abril  – y CVS PLUS</h1>
+<h1 style="color:white;text-align:center">📊 Dashboard Comercial de junio "detallado de ventas al 29" – CVS PLUS al 27, encuentas al 25</h1>
 </div>
 """, unsafe_allow_html=True)
 
@@ -134,8 +135,8 @@ elif perfil == "DIRECTOR COMERCIAL":
 
 
 # =============================
-# CARGA DATOS Y FILTROS SEGURAMENTE
-# ============================
+# CARGA DATOS Y FILTROS
+# =============================
 
 # -----------------------------
 # Leer archivos
@@ -144,10 +145,25 @@ df = pd.read_excel(RUTA_LIQ)
 df_meta = pd.read_excel(RUTA_METAS)
 
 # -----------------------------
+# Convertir la columna Cantidad a numérica
+# -----------------------------
+df["Cantidad"] = (
+    df["Cantidad"]
+    .astype(str)
+    .str.replace(",", ".", regex=False)
+)
+
+df["Cantidad"] = pd.to_numeric(
+    df["Cantidad"],
+    errors="coerce"
+).fillna(0)
+
+# -----------------------------
 # Formatear fecha y crear columna Mes
 # -----------------------------
 df["Fecha"] = pd.to_datetime(df["Fecha"])
 df["Mes"] = df["Fecha"].dt.strftime("%Y-%m")
+
 
 # -----------------------------
 # Normalizar columnas de texto
@@ -209,30 +225,58 @@ if cvs_sel and cvs_sel != "Todos":
         (df_f["Producto"].str.upper() == "CVS PLUS")
     ]
 
+
+
+# =============================
+# KPI CVS PLUS
+# =============================
+
+if cvs_sel and cvs_sel != "Todos":
+
+    df_cvs_plus = df_f[
+        (df_f["Sucursal"] == cvs_sel) &
+        (df_f["Producto"] == "CVS PLUS")
+    ]
+
     # Meta CVS PLUS
     meta_plus = df_cvs_plus["Meta_Producto"].max()
 
-    # Ejecutado (cantidad)
-    ejec_plus = df_cvs_plus["Cantidad"].iloc[0] if not df_cvs_plus.empty else 0
+    # Ejecutado CVS PLUS
+    ejec_plus = df_cvs_plus["Cantidad"].sum()
 
-    # % cumplimiento
+    # % cumplimiento cantidad
     if meta_plus > 0:
         pct_plus = round((ejec_plus / meta_plus) * 100, 1)
     else:
         pct_plus = 0
 
+    # % Encuestas
+    df_turno = df_f[
+        (df_f["Sucursal"] == cvs_sel) &
+        (df_f["Producto"] == "TURNO")
+    ]
+
+    if not df_turno.empty:
+        pct_encuestas = round(
+            float(df_turno["Cantidad"].iloc[0]),
+            1
+        )
+    else:
+        pct_encuestas = 0
+
     # Semáforo
-    if pct_plus >= 100:
+    if pct_plus >= 100 and pct_encuestas >= 5:
         color = "#2ecc71"
-        estado = "Cumplido"
-    elif pct_plus >= 80:
+        estado = "Cumple cantidad y encuestas"
+
+    elif pct_plus >= 100 and pct_encuestas < 5:
         color = "#f39c12"
-        estado = "En riesgo"
+        estado = "Cumple cantidad, no cumple encuestas"
+
     else:
         color = "#e74c3c"
-        estado = "Bajo cumplimiento"
+        estado = "No cumple condiciones"
 
-    # Cuadro visual
     st.markdown(
         f"""
         <div style="
@@ -246,16 +290,18 @@ if cvs_sel and cvs_sel != "Todos":
             margin-bottom:15px;
         ">
         📦 CVS PLUS — {cvs_sel}<br><br>
-        Meta: {int(meta_plus):,} | Ejecutado: {int(ejec_plus):,}<br>
-        Cumplimiento: {pct_plus}% ({estado})
+
+        Meta: {int(meta_plus):,} |
+        Ejecutado: {int(ejec_plus):,}<br>
+
+        Cumplimiento: {pct_plus}%<br>
+        Encuestas: {pct_encuestas}%<br><br>
+
+        {estado}
         </div>
         """,
         unsafe_allow_html=True
     )
-
-
-
-
 
 # =============================
 # TABS
@@ -266,94 +312,145 @@ tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "💰 Presupuesto / Comisión", "�
 # TAB 1 – DASHBOARD
 # =============================
 with tab1:
+
+    # EVITA TICK / RERUN
+    if not cvs_sel or cvs_sel == "Todos":
+        st.info("Selecciona una sucursal para visualizar el dashboard")
+        st.stop()
+
     st.subheader("📦 Cumplimiento por Producto")
-    
-    # Lista fija de productos
-    productos_base = ["HOGAR", "POSTPAGO", "TERMINALES", "CVS PLUS", "OTROS"]
-    
-    
-    # Agrupar meta y ejecutado por producto
-    prod = df_f.groupby("Producto").agg(
-        Meta=("Meta_Producto", "max"),   # meta única
-        Ejecutado=("Cantidad", "sum")    # cantidad vendida
-    ).reset_index()
-
-
-    # Asegurar productos base
-    prod = pd.DataFrame(productos_base, columns=["Producto"]).merge(
-        prod, on="Producto", how="left"
-    ).fillna(0)
-
-
-    # Calcular % cumplimiento
-    prod["% Cumplimiento"] = (
-        prod["Ejecutado"] / prod["Meta"]
-    ).replace([np.inf, -np.inf], 0).fillna(0) * 100
-
-    # Convertir a enteros
-    prod["Meta"] = prod["Meta"].astype(int)
-    prod["Ejecutado"] = prod["Ejecutado"].astype(int)
-    prod["% Cumplimiento"] = prod["% Cumplimiento"].round(1)
-
-    # Ordenar por ejecutado
-    prod = prod.sort_values("Ejecutado", ascending=False).reset_index(drop=True)
-
-    # Posiciones
-    x = np.arange(len(prod["Producto"]))
-    width = 0.35
-
-    fig, ax = plt.subplots(figsize=(10, 6))
-
-    bars_meta = ax.bar(x - width/2, prod["Meta"], width, label="Meta")
-    bars_ejec = ax.bar(x + width/2, prod["Ejecutado"], width, label="Ejecutado")
-
-    # Etiquetas para META
-    for bar in bars_meta:
-        height = bar.get_height()
-        ax.text(
-            bar.get_x() + bar.get_width()/2,
-            height,
-            f"{int(height):,}".replace(",", "."),
-            ha="center",
-            va="bottom",
-            fontsize=9,
-            fontweight="bold"
-        )
-
-    # Etiquetas para EJECUTADO + %
-    for i, bar in enumerate(bars_ejec):
-        height = bar.get_height()
-        pct = prod["% Cumplimiento"].iloc[i]
-        ax.text(
-            bar.get_x() + bar.get_width()/2,
-            height,
-            f"{int(height):,}\n{pct:.1f}%",
-            ha="center",
-            va="bottom",
-            fontsize=9,
-            fontweight="bold"
-        )
-
-    # Línea de tendencia
-    z = np.polyfit(x, prod["Ejecutado"], 1)
-    p = np.poly1d(z)
-    ax.plot(x, p(x), linestyle="--", linewidth=2, label="Tendencia Ejecutado")
-
-    ax.set_xticks(x)
-    ax.set_xticklabels(prod["Producto"], rotation=45, ha="right")
-    ax.set_ylabel("Puntos")
-    ax.set_title("Meta vs Ejecutado por Producto")
-    ax.legend()
-    ax.grid(axis="y", linestyle="--", alpha=0.7)
-
-    st.pyplot(fig)
-
 
     # =============================
-    # META GENERAL VS EJECUTADO
+    # COLORES CORPORATIVOS
     # =============================
+    COLOR_META = "#1F3C88"        # Azul corporativo
+    COLOR_EJEC = "#00A99D"        # Verde/teal moderno
+    COLOR_TENDENCIA = "#E53935"   # Rojo elegante
 
-    st.subheader("🎯 Meta General vs Ejecutado")
+    # =============================
+    # DOS COLUMNAS
+    # =============================
+    col1, col2 = st.columns([2, 1])
+
+    # =============================
+    # GRÁFICO PRODUCTOS
+    # =============================
+    with col1:
+
+        productos_base = ["HOGAR", "POSTPAGO", "TERMINALES", "CVS PLUS", "OTROS"]
+
+        prod = df_f.groupby("Producto").agg(
+            Meta=("Meta_Producto", "max"),
+            Ejecutado=("Cantidad", "sum")
+        ).reset_index()
+
+        # Asegurar productos base
+        prod = pd.DataFrame(productos_base, columns=["Producto"]).merge(
+            prod,
+            on="Producto",
+            how="left"
+        ).fillna(0)
+
+        # % cumplimiento
+        prod["% Cumplimiento"] = (
+            prod["Ejecutado"] / prod["Meta"]
+        ).replace([np.inf, -np.inf], 0).fillna(0) * 100
+
+        prod["Meta"] = prod["Meta"].astype(int)
+        prod["Ejecutado"] = prod["Ejecutado"].astype(int)
+        prod["% Cumplimiento"] = prod["% Cumplimiento"].round(1)
+
+        # Orden
+        prod = prod.sort_values("Ejecutado", ascending=False).reset_index(drop=True)
+
+        x = np.arange(len(prod["Producto"]))
+        width = 0.35
+
+        fig, ax = plt.subplots(figsize=(10, 5))
+
+        # 🔵 BARRAS
+        bars_meta = ax.bar(
+            x - width/2,
+            prod["Meta"],
+            width,
+            label="Meta",
+            color=COLOR_META
+        )
+
+        bars_ejec = ax.bar(
+            x + width/2,
+            prod["Ejecutado"],
+            width,
+            label="Ejecutado",
+            color=COLOR_EJEC
+        )
+
+        # Etiquetas META
+        for bar in bars_meta:
+            height = bar.get_height()
+
+            ax.text(
+                bar.get_x() + bar.get_width()/2,
+                height,
+                f"{int(height):,}".replace(",", "."),
+                ha="center",
+                va="bottom",
+                fontsize=9,
+                fontweight="bold"
+            )
+
+        # Etiquetas EJECUTADO
+        for i, bar in enumerate(bars_ejec):
+
+            height = bar.get_height()
+            pct = prod["% Cumplimiento"].iloc[i]
+
+            ax.text(
+                bar.get_x() + bar.get_width()/2,
+                height,
+                f"{int(height):,}\n{pct:.1f}%",
+                ha="center",
+                va="bottom",
+                fontsize=9,
+                fontweight="bold"
+            )
+
+        # 🔴 LÍNEA TENDENCIA
+        z = np.polyfit(x, prod["Ejecutado"], 1)
+        p = np.poly1d(z)
+
+        ax.plot(
+            x,
+            p(x),
+            linestyle="--",
+            linewidth=2,
+            color=COLOR_TENDENCIA,
+            label="Tendencia"
+        )
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(prod["Producto"], rotation=20)
+
+        ax.set_ylabel("Cantidad")
+        ax.set_title("Meta vs Ejecutado por Producto")
+
+        ax.grid(axis="y", linestyle="--", alpha=0.3)
+
+        ax.legend(frameon=False)
+
+        st.pyplot(fig, clear_figure=True)
+        plt.close(fig)
+
+    # =============================
+    # META GENERAL
+    # =============================
+# =============================
+# META GENERAL VS EJECUTADO
+# =============================
+
+with col2:
+
+    st.markdown("## 🎯 Meta General")
 
     # Meta general sin duplicar CVS
     meta_general = (
@@ -367,45 +464,75 @@ with tab1:
     ejecutado_general = df_f["Puntos"].sum()
 
     # % cumplimiento general
-    pct_general = (ejecutado_general / meta_general * 100) if meta_general > 0 else 0
+    pct_general = (
+        (ejecutado_general / meta_general) * 100
+        if meta_general > 0 else 0
+    )
 
-    # DataFrame gráfico
+    # =============================
+    # DATAFRAME
+    # =============================
     df_general = pd.DataFrame({
-        "Concepto": ["Meta General", "Ejecutado"],
+        "Concepto": ["Meta", "Ejecutado"],
         "Valor": [meta_general, ejecutado_general]
     })
 
-    # Gráfico
-    fig, ax = plt.subplots(figsize=(5, 3))
-    bars = ax.bar(df_general["Concepto"], df_general["Valor"])
+    # =============================
+    # GRÁFICO ESTABLE
+    # =============================
+    fig2, ax2 = plt.subplots(figsize=(5, 5))
 
+    colores = ["#1E3A8A", "#0F766E"]
+
+    bars = ax2.bar(
+        df_general["Concepto"],
+        df_general["Valor"],
+        color=colores,
+        width=0.75
+    )
+
+    # Etiquetas
     for bar in bars:
+
         height = bar.get_height()
-        valor = f"{height:,.0f}".replace(",", ".")
-        ax.text(
+
+        ax2.text(
             bar.get_x() + bar.get_width()/2,
             height * 1.01,
-            valor,
+            f"{height:,.0f}".replace(",", "."),
             ha="center",
             va="bottom",
-            fontsize=8,
+            fontsize=11,
             fontweight="bold"
         )
 
-    # Título con % cumplimiento
-    ax.set_title(f"Cumplimiento general: {pct_general:.1f}%", fontsize=8)
-
-
-    ax.yaxis.set_major_formatter(
-        plt.FuncFormatter(lambda x, _: f"{int(x):,}".replace(",", "."))
+    # Título fijo
+    ax2.set_title(
+        f"Cumplimiento: {pct_general:.1f}%",
+        fontsize=18,
+        fontweight="bold",
+        pad=15
     )
 
-    # Reducir tamaño de números del eje Y
-    ax.tick_params(axis='y', labelsize=6)
+    # Formato eje Y
+    ax2.yaxis.set_major_formatter(
+        plt.FuncFormatter(
+            lambda x, _: f"{int(x):,}".replace(",", ".")
+        )
+    )
 
-    ax.grid(axis="y", linestyle="--", alpha=0.5)
+    # Grid
+    ax2.grid(axis="y", linestyle="--", alpha=0.3)
 
-    st.pyplot(fig)
+    # Eliminar bordes superiores
+    ax2.spines["top"].set_visible(False)
+    ax2.spines["right"].set_visible(False)
+
+    # 🔴 IMPORTANTE
+    fig2.tight_layout(pad=2)
+
+    st.pyplot(fig2, clear_figure=True)
+    plt.close(fig)
 
 
 
@@ -415,7 +542,6 @@ with tab1:
 SUPERNUMERARIOS = [
     "Johan Daniel Herrera Mazo",
     "Kelly Yuliana Ospina Saldarriaga",
-    "Lider Zargoza Kelly Celsa",
     "Sara Julieth Acevedo Gutierrez"
 ]
 
@@ -423,27 +549,78 @@ SUPERNUMERARIOS = [
 # =====================
 # REGLA DE DISTRIBUCIÓN
 # =====================
-def calcular_distribucion(n_asesores, cvs):
-    if str(cvs).upper() == "FRONTINO":
-        return 0.40, 0.60
+def calcular_distribucion(n_asesores, cvs, nombre=None, rol=None):
 
+    cvs = str(cvs).upper()
+    nombre = str(nombre).upper() if nombre else ""
+
+    # ==================================================
+    # 🔴 REGLA ESPECIAL caldas
+    # ==================================================
+    # Metas puntos:
+    # Líder Yolima = 1166.2
+    # Maria = 1749.4
+    # Johnson = 784.4
+    #
+    # La suma total = 3700
+    #
+    # Se convierte a porcentaje para productos y puntos
+    # ==================================================
+
+    if cvs == "CALDAS":
+
+        if rol == "LIDER":
+            return 1166.2 / 3700
+
+        elif "MARIA" in nombre:
+            return 1749.4 / 3700
+
+        elif "JOHNSON" in nombre:
+            return 784.4 / 3700
+
+        else:
+            return 0.266   # o el porcentaje que corresponda
+
+    # ==================================================
+    # ==================================================
+    # 🔴 REGLA ESPECIAL FRONTINO
+    # ==================================================
+    if cvs == "FRONTINO":
+        return 0.50
+
+    # ==================================================
+    # 🔴 REGLAS NORMALES
+    # ==================================================
+
+    # Si no hay asesores
     if n_asesores == 0:
-        return 1.0, 1.0
+        return 1.0
 
-    if n_asesores == 1:
-        return 0.40, 0.60
-    elif n_asesores == 2:
-        return 0.25, 0.375
-    elif n_asesores >= 3:
-        return 0.20, 0.266
+    if rol == "LIDER":
+
+        if n_asesores == 1:
+            return 0.40
+        elif n_asesores == 2:
+            return 0.25
+        elif n_asesores >= 3:
+            return 0.20
+
     else:
-        return 1.0, 0.0
 
+        if n_asesores == 1:
+            return 0.60
+        elif n_asesores == 2:
+            return 0.375
+        elif n_asesores >= 3:
+            return 0.266
+
+    return 1.0
 
 # =====================
 # MAESTRO DE PRODUCTOS
 # =====================
 def maestro_productos_por_cvs(df, cvs_sel):
+
     df_cvs = df[df["Sucursal"] == cvs_sel]
 
     maestro = (
@@ -453,7 +630,14 @@ def maestro_productos_por_cvs(df, cvs_sel):
         .to_dict()
     )
 
-    productos_base = ["HOGAR", "POSTPAGO", "TERMINALES", "CVS PLUS", "OTROS"]
+    # Productos base obligatorios
+    productos_base = [
+        "HOGAR",
+        "POSTPAGO",
+        "TERMINALES",
+        "CVS PLUS",
+        "OTROS"
+    ]
 
     for p in productos_base:
         if p not in maestro:
@@ -462,26 +646,100 @@ def maestro_productos_por_cvs(df, cvs_sel):
     return maestro
 
 
+# =====================
+# TABLA PRODUCTOS
+# =====================
 def construir_tabla_productos(df_vendedor, maestro, df_cvs, rol):
 
-    # ❌ EXCLUIR SUPERNUMERARIOS SOLO PARA META
-    df_cvs_kpi = df_cvs[~df_cvs["Nombre_Vendedor"].isin(SUPERNUMERARIOS)]
+    # 🔴 EXCLUIR SUPERNUMERARIOS
+    df_cvs_kpi = df_cvs[
+        ~df_cvs["Nombre_Vendedor"].isin(SUPERNUMERARIOS)
+    ]
 
-    n_asesores = df_cvs_kpi[df_cvs_kpi["Rol"] == "ASESOR"]["Nombre_Vendedor"].nunique()
+    n_asesores = df_cvs_kpi[
+        df_cvs_kpi["Rol"] == "ASESOR"
+    ]["Nombre_Vendedor"].nunique()
 
-    porc_asesor, porc_lider = calcular_distribucion(n_asesores, df_cvs["Sucursal"].iloc[0])
+    cvs = df_cvs["Sucursal"].iloc[0]
 
-    porcentaje = porc_lider if rol == "ASESOR" else porc_asesor
+    nombre = df_vendedor["Nombre_Vendedor"].iloc[0]
 
-    ejec = df_vendedor.groupby("Producto")["Cantidad"].sum().to_dict()
+    # =========================
+    # PORCENTAJE PERSONALIZADO
+    # =========================
+    porcentaje = calcular_distribucion(
+        n_asesores,
+        cvs,
+        nombre,
+        rol
+    )
+
+
+
+
+
+
+    # =========================
+    # EJECUTADO PRODUCTOS
+    # =========================
+    ejec = (
+        df_vendedor.groupby("Producto")["Cantidad"]
+        .sum()
+        .to_dict()
+    )
+
+    # =========================
+    # ELIMINAR PRODUCTOS VACÍOS
+    # =========================
+    maestro_limpio = {
+        producto: meta
+        for producto, meta in maestro.items()
+        if pd.notna(producto)
+        and str(producto).strip() != ""
+        and str(producto).upper() != "NONE"
+    }
 
     filas = []
 
-    for producto, meta in maestro.items():
+    for producto, meta in maestro_limpio.items():
 
-        meta_ajustada = meta * porcentaje
+        # =========================
+        # VALIDAR NaN
+        # =========================
+        if pd.isna(meta):
+            meta = 0
+
+        if pd.isna(porcentaje):
+            porcentaje = 0
+
+        # =========================
+        # META AJUSTADA
+        # =========================
+        meta_ajustada = math.floor((meta * porcentaje) + 0.5)
+
+        # Redondeo comercial
+        meta_ajustada = int(meta_ajustada)
+
+        # =========================
+        # EJECUTADO
+        # =========================
         ejecutado = ejec.get(producto, 0)
 
+        # =========================
+        # REGLA ESPECIAL OTROS
+        # =========================
+        if producto == "OTROS":
+
+            porta_prepago = ejec.get("PORTABILIDADES PREPAGO", 0)
+
+            # Si no cumple las 4 portabilidades prepago,
+            # no aplica el pago del KPI OTROS
+            if porta_prepago < 4:
+                ejecutado = 0
+
+        # =========================
+        # % CUMPLIMIENTO
+        # =========================
         if meta_ajustada > 0:
             pct = int(round((ejecutado / meta_ajustada) * 100))
         else:
@@ -489,17 +747,44 @@ def construir_tabla_productos(df_vendedor, maestro, df_cvs, rol):
 
         filas.append({
             "Producto": producto,
-            "Meta_Producto": int(round(meta_ajustada)),
+            "Meta_Producto": meta_ajustada,
             "Ejecutado": int(ejecutado),
             "% Cumplimiento": f"{pct}%"
         })
 
+    # =========================
+    # CREAR TABLA
+    # =========================
     tabla = pd.DataFrame(filas)
 
-    orden_productos = ["POSTPAGO", "HOGAR", "TERMINALES", "OTROS", "CVS PLUS"]
+    # =========================
+    # ELIMINAR FILAS VACÍAS
+    # =========================
+    tabla = tabla[
+        tabla["Producto"].notna() &
+        (tabla["Producto"].astype(str).str.strip() != "") &
+        (tabla["Producto"].astype(str).str.upper() != "NONE")
+    ]
 
-    tabla["Producto"] = pd.Categorical(tabla["Producto"], categories=orden_productos, ordered=True)
+    # =========================
+    # ORDEN FIJO PRODUCTOS
+    # =========================
+    orden_productos = [
+        "POSTPAGO",
+        "HOGAR",
+        "TERMINALES",
+        "OTROS",
+        "CVS PLUS"
+    ]
+
+    tabla["Producto"] = pd.Categorical(
+        tabla["Producto"],
+        categories=orden_productos,
+        ordered=True
+    )
+
     tabla = tabla.sort_values("Producto")
+    tabla = tabla.dropna(subset=["Producto"])
 
     return tabla
 
@@ -509,25 +794,42 @@ def construir_tabla_productos(df_vendedor, maestro, df_cvs, rol):
 # =====================
 def calcular_kpi_puntos(df_cvs, df_persona, rol):
 
-    # ❌ excluir supernumerarios del cálculo general
-    df_cvs_kpi = df_cvs[~df_cvs["Nombre_Vendedor"].isin(SUPERNUMERARIOS)]
+    # 🔴 EXCLUIR SUPERNUMERARIOS
+    df_cvs_kpi = df_cvs[
+        ~df_cvs["Nombre_Vendedor"].isin(SUPERNUMERARIOS)
+    ]
 
     meta_general = df_cvs_kpi["Meta_General"].iloc[0]
 
-    n_asesores = df_cvs_kpi[df_cvs_kpi["Rol"] == "ASESOR"]["Cedula_Vendedor"].nunique()
+    n_asesores = df_cvs_kpi[
+        df_cvs_kpi["Rol"] == "ASESOR"
+    ]["Cedula_Vendedor"].nunique()
 
     cvs = df_cvs_kpi["Sucursal"].iloc[0]
 
-    pct_lider, pct_asesor_individual = calcular_distribucion(n_asesores, cvs)
+    nombre = df_persona["Nombre_Vendedor"].iloc[0]
 
-    if rol == "LIDER":
-        meta = meta_general * pct_lider
-    else:
-        meta = meta_general * pct_asesor_individual
+    # =========================
+    # PORCENTAJE PERSONALIZADO
+    # =========================
+    porcentaje = calcular_distribucion(
+        n_asesores,
+        cvs,
+        nombre,
+        rol
+    )
 
+    # 🔴 META PERSONALIZADA
+    meta = math.floor((meta_general * porcentaje) + 0.5)
+
+    # 🔴 EJECUTADO
     ejecutado = df_persona["Puntos"].sum()
 
-    cumplimiento = round((ejecutado / meta) * 100, 1) if meta > 0 else 0
+    # 🔴 % CUMPLIMIENTO
+    cumplimiento = (
+        round((ejecutado / meta) * 100, 1)
+        if meta > 0 else 0
+    )
 
     return meta, ejecutado, cumplimiento
 
